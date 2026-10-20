@@ -74,7 +74,8 @@ jobs:
           TAG="$(jq -er '.tag_name' /tmp/release.json)"
           echo "Upstream release: $TAG"
 
-          mkdir -p downloads repo
+          mkdir -p downloads
+          ostree init --repo=repo --mode=archive-z2
 
           # Download the x86_64 bundle.
           for ARCH in x86_64 aarch64; do
@@ -113,9 +114,7 @@ jobs:
 
           flatpak build-update-repo repo
 
-          flatpak remote-add --user --if-not-exists \
-            personal-check repo \
-            --no-gpg-verify
+          ostree refs --repo=repo
 
           flatpak remote-ls --user personal-check
 
