@@ -1,4 +1,4 @@
-
+```yaml
 name: Build and Deploy Flatpak Repository
 
 on:
@@ -42,7 +42,6 @@ jobs:
           set -euo pipefail
 
           API="https://api.github.com/repos/storytold/craft-launcher/releases/latest"
-
           curl -fsSL "$API" -o /tmp/release.json
 
           TAG="$(jq -er '.tag_name' /tmp/release.json)"
@@ -71,11 +70,9 @@ jobs:
             fi
 
             FILE="downloads/$(basename "$URL")"
-
             echo "Downloading $FILE"
             curl -fLsS --retry 3 "$URL" -o "$FILE"
             test -s "$FILE"
-
             echo "Downloaded $(du -h "$FILE" | cut -f1)"
           done
 
@@ -125,11 +122,9 @@ jobs:
             exit 1
           fi
 
-          printf '%s\n' "$FLATPAK_GPG_PRIVATE_KEY" \
-            | gpg --batch --import
+          printf '%s\n' "$FLATPAK_GPG_PRIVATE_KEY" | gpg --batch --import
 
-          KEY_ID="$(gpg --batch --with-colons \
-            --list-secret-keys \
+          KEY_ID="$(gpg --batch --with-colons --list-secret-keys \
             | awk -F: '$1 == "sec" { print $5; exit }')"
 
           if [ -z "$KEY_ID" ]; then
@@ -137,8 +132,6 @@ jobs:
             exit 1
           fi
 
-          # This workflow requires a signing key with NO passphrase.
-          # Do not print the private key or secret contents in logs.
           echo "Imported GPG signing key: $KEY_ID"
           echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
 
@@ -147,7 +140,7 @@ jobs:
 
           test -s "$RUNNER_TEMP/flatpak-public-key.txt"
 
-      - name: Sign repository and generate metadata
+      - name: Sign application commits and generate repository metadata
         shell: bash
         env:
           GNUPGHOME: ${{ runner.temp }}/flatpak-gnupg
@@ -161,14 +154,31 @@ jobs:
           REPO_NAME="${REPOSITORY#*/}"
           REPO_URL="https://${OWNER}.github.io/${REPO_NAME}"
 
-          echo "Signing repository with GPG key $GPG_KEY_ID"
+          echo "Signing application commits with GPG key $GPG_KEY_ID"
+          gpg --batch --list-secret-keys "$GPG_KEY_ID"
 
+          # Sign each imported application commit.
+          for ARCH in x86_64 aarch64; do
+            REF="app/ai.storyteller.artcraft-launcher/${ARCH}/stable"
+
+            if ostree refs --repo=repo | grep -Fxq "$REF"; then
+              echo "Signing $REF"
+              flatpak build-sign \
+                --gpg-sign="$GPG_KEY_ID" \
+                --gpg-homedir="$GNUPGHOME" \
+                --arch="$ARCH" \
+                repo ai.storyteller.artcraft-launcher stable
+            fi
+          done
+
+          # Sign repository summary and generate static deltas.
           flatpak build-update-repo \
             --title="ArtCraft Launcher Personal Repo" \
             --comment="Personal repository for ArtCraft Launcher" \
             --description="Automatically updated ArtCraft Launcher Flatpak repository" \
             --homepage="https://github.com/storytold/craft-launcher" \
             --gpg-sign="$GPG_KEY_ID" \
+            --gpg-homedir="$GNUPGHOME" \
             --generate-static-deltas \
             repo
 
@@ -198,3 +208,4 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+```
