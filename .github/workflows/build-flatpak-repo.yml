@@ -127,6 +127,7 @@ jobs:
           echo "Application ref found successfully."
 
       
+      
       - name: Import repository signing key
         id: signing
         shell: bash
@@ -138,8 +139,13 @@ jobs:
           export GNUPGHOME="$RUNNER_TEMP/flatpak-gnupg"
           mkdir -m 700 -p "$GNUPGHOME"
 
+          # Import the private signing key.
           printf '%s\n' "$FLATPAK_GPG_PRIVATE_KEY" \
             | gpg --batch --import
+
+          # Configure GPG for non-interactive signing.
+          echo 'allow-loopback-pinentry' >> "$GNUPGHOME/gpg-agent.conf"
+          gpgconf --kill gpg-agent || true
 
           KEY_ID="$(gpg --batch --with-colons \
             --list-secret-keys \
@@ -150,18 +156,26 @@ jobs:
             exit 1
           fi
 
-          # Confirm the key can sign without an interactive prompt.
+          # Test signing with an empty passphrase.
           printf 'Flatpak signing test\n' > "$RUNNER_TEMP/sign-test.txt"
-          gpg --batch --yes --local-user "$KEY_ID" \
+
+          gpg --batch --yes \
+            --pinentry-mode loopback \
+            --passphrase '' \
+            --local-user "$KEY_ID" \
             --detach-sign "$RUNNER_TEMP/sign-test.txt"
 
           echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
 
+          # Export the public key for the .flatpakrepo descriptor.
           gpg --batch --export "$KEY_ID" \
             | base64 -w0 > /tmp/flatpak-public-key.txt
 
 
+
+      
       - name: Sign repository and generate metadata
+        shell: bash
         env:
           GNUPGHOME: ${{ runner.temp }}/flatpak-gnupg
           GPG_KEY_ID: ${{ steps.signing.outputs.key_id }}
@@ -169,7 +183,7 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
         run: |
-          set -eu
+          set -euo pipefail
 
           REPO_URL="https://${OWNER}.github.io/$(echo "$REPOSITORY" | cut -d/ -f2)"
 
@@ -188,12 +202,13 @@ jobs:
           Url=${REPO_URL}
           Homepage=https://github.com/storytold/craft-launcher
           Comment=Personal Flatpak repository for ArtCraft Launcher
-          Description=Automatically updated ArtCraft Launcher Flatpak repository
+          Description=Automatically updated Flatpak repository for ArtCraft Launcher
           GPGKey=$(cat /tmp/flatpak-public-key.txt)
           IsRuntime=false
           EOF
 
           printf '%s\n' "$UPSTREAM_TAG" > repo/UPSTREAM_VERSION
+
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
