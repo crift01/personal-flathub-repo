@@ -109,21 +109,22 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Verify imported application
+        shell: bash
         run: |
-          set -eu
+          set -euo pipefail
 
-          flatpak build-update-repo repo
+          echo "Checking imported Flatpak refs..."
 
-          ostree refs --repo=repo
+          ostree refs --repo=repo | tee /tmp/flatpak-refs.txt
 
-          flatpak remote-ls --user personal-check
-
-          if ! flatpak remote-ls --user personal-check \
-            --app --columns=application \
-            | grep -Fxq "ai.storyteller.artcraft-launcher"; then
-            echo "::error::Expected ArtCraft Launcher ref not found"
+          if ! grep -Fxq \
+            "app/ai.storyteller.artcraft-launcher/x86_64/stable" \
+            /tmp/flatpak-refs.txt; then
+            echo "::error::Expected x86_64 application ref not found"
             exit 1
           fi
+
+          echo "Application ref found successfully."
 
       - name: Import repository signing key
         id: signing
