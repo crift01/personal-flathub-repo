@@ -126,6 +126,7 @@ jobs:
 
           echo "Application ref found successfully."
 
+      
       - name: Import repository signing key
         id: signing
         shell: bash
@@ -133,11 +134,6 @@ jobs:
           FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-
-          if [ -z "${FLATPAK_GPG_PRIVATE_KEY:-}" ]; then
-            echo "::error::Set the FLATPAK_GPG_PRIVATE_KEY repository secret"
-            exit 1
-          fi
 
           export GNUPGHOME="$RUNNER_TEMP/flatpak-gnupg"
           mkdir -m 700 -p "$GNUPGHOME"
@@ -150,14 +146,20 @@ jobs:
             | awk -F: '$1 == "sec" { print $5; exit }')"
 
           if [ -z "$KEY_ID" ]; then
-            echo "::error::No secret signing key was imported"
+            echo "::error::No secret signing key found"
             exit 1
           fi
+
+          # Confirm the key can sign without an interactive prompt.
+          printf 'Flatpak signing test\n' > "$RUNNER_TEMP/sign-test.txt"
+          gpg --batch --yes --local-user "$KEY_ID" \
+            --detach-sign "$RUNNER_TEMP/sign-test.txt"
 
           echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
 
           gpg --batch --export "$KEY_ID" \
             | base64 -w0 > /tmp/flatpak-public-key.txt
+
 
       - name: Sign repository and generate metadata
         env:
